@@ -1,0 +1,275 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "EngineerAlias": {
+      "type": "string",
+      "defaultValue": "MsAlias",
+      "metadata": {
+        "description": "Engineer MS Alias"
+      }
+    },
+    "assignedTestNumber": {
+      "type": "string",
+      "metadata": {
+        "description": "The number assigned to you for this lab. Either 1, 2 or 3."
+      }
+    }
+  },
+  "variables": {
+    "webAppRG": "[resourceGroup().name]",
+    "appServicePlanName": "[concat(parameters('EngineerAlias'),'-C1-ASP')]",
+    "webAppName": "[concat(parameters('EngineerAlias'),'-C1-APP')]",
+    "appServicePlanSku": "S1",
+    "workerSize": "0",
+
+    "customHostName": "[concat('L200hostname', parameters('assignedTestNumber'),'.net')]",
+    "certificateName": "[concat('L200hostname', parameters('assignedTestNumber'))]",
+    "existingKeyVaultId": "[concat('L200DC', parameters('assignedTestNumber'))]",
+    "enableSSL": true
+  },
+  "resources": [
+    {
+      "name": "[variables('appServicePlanName')]",
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2018-02-01",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "[variables('appServicePlanSku')]",
+        "capacity": "[variables('workerSize')]"
+      },
+      "kind": "app"
+    },
+    {
+      "name": "[variables('webAppName')]",
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2018-11-01",
+      "location": "[resourceGroup().location]",
+      "kind": "app",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverFarms', variables('appServicePlanName'))]"
+      ],
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverFarms', variables('appServicePlanName'))]"
+      }
+    },
+    {
+      "name": "[variables('certificateName')]",
+      "type": "Microsoft.Web/certificates",
+      "apiVersion": "2018-11-01",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('webAppName'))]"
+      ],
+      "properties": {
+        "keyVaultId": "[reference(resourceId('L200CertificationKeepers', 'Microsoft.CertificateRegistration/certificateOrders/certificates',variables('certificateName'),variables('certificateName')),'2018-02-01').keyVaultId]",
+        "keyVaultSecretName": "[reference(resourceId('L200CertificationKeepers','Microsoft.CertificateRegistration/certificateOrders/certificates',variables('certificateName'), variables('certificateName')),'2018-02-01').keyVaultSecretName]",
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms/', variables('appServicePlanName'))]"
+      }
+    },
+    //----------------------------------------------------------------------------------------------
+    //----------------------------------------------------------------------------------------------
+    {
+      "name": "nestedTemplate-DNSName",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2019-10-01",
+      "resourceGroup": "L200CertificationKeepers",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites/', variables('webAppName'))]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {},
+          "variables": {},
+          "resources": [
+            {
+              "name": "[variables('customHostName')]",
+              "type": "Microsoft.Network/dnszones",
+              "apiVersion": "2018-05-01",
+              "location": "global",
+              "properties": {
+                "zoneType": "Public"
+              }
+            },
+            {
+              "name": "[concat(variables('customHostName'), '/asuid')]",
+              "type": "Microsoft.Network/dnszones/TXT",
+              "apiVersion": "2018-05-01",
+              "dependsOn": [
+              ],
+              "properties": {
+                "TTL": 3600,
+                "TXTRecords": [
+                  {
+                    "value": [
+                      "[reference(resourceId(variables('webAppRG'),'Microsoft.Web/sites', variables('webAppName')), '2015-08-01').customDomainVerificationId]"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "[concat(variables('customHostName'), '/@' )]",
+              "type": "Microsoft.Network/dnsZones/A",
+              "apiVersion": "2018-05-01",
+              "location": "global",
+              "dependsOn": [
+              ],
+              "properties": {
+                "TTL": 3600,
+                "ARecords": [
+                  {
+                    "ipv4Address": "[reference(resourceId(variables('webAppRG'),'Microsoft.Web/sites', variables('webAppName')), '2015-08-01').inboundIpAddress]"
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+          }
+        },
+        "parameters": {}
+      }
+    },
+    //----------------------------------------------------------------------------------------------
+    {
+      "name": "[concat(variables('webAppName'), '/', variables('customHostName'))]",
+      "type": "Microsoft.Web/sites/hostNameBindings",
+      "apiVersion": "2018-11-01",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[resourceId('L200CertificationKeepers','Microsoft.Resources/deployments', 'nestedTemplate-DNSName')]",
+        "[resourceId('Microsoft.Web/sites', variables('webAppName'))]",
+        "[resourceId('Microsoft.Web/certificates', variables('certificateName'))]"
+      ],
+      "properties": {
+        "sslState": "SniEnabled",
+        "thumbprint": "[reference(resourceId('Microsoft.Web/certificates', variables('certificateName'))).thumbprint]"
+      }
+    },
+    //----------------------------------------------------------------------------------------------
+    //----------------------------------------------------------------------------------------------
+    {
+      "name": "nestedTemplate-keyvault",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2019-10-01",
+      "resourceGroup": "L200CertificationKeepers",
+      "dependsOn": [
+        "[resourceId('L200CertificationKeepers','Microsoft.Resources/deployments', 'nestedTemplate-DNSName')]",
+        "[resourceId('Microsoft.Web/sites', variables('webAppName'))]",
+        "[resourceId('Microsoft.Web/sites/hostNameBindings', variables('webAppName'), variables('customHostName'))]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {},
+          "variables": {},
+          "resources": [
+            {
+              "name": "[variables('existingKeyVaultId')]",
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2016-10-01",
+              "location": "Central US",
+              "properties": {
+                "sku": {
+                  "family": "A",
+                  "name": "Standard"
+                },
+                "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+                "accessPolicies": [
+                  {
+                    // amymcel
+                    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+                    "objectId": "278be2cf-2149-48a9-9810-461e9719abb3",
+                    "permissions": {
+                      "keys": [
+                        "Get",
+                        "List",
+                        "Update",
+                        "Create",
+                        "Import",
+                        "Delete",
+                        "Recover",
+                        "Backup",
+                        "Restore"
+                      ],
+                      "secrets": [
+                        "Get",
+                        "List",
+                        "Set",
+                        "Delete",
+                        "Recover",
+                        "Backup",
+                        "Restore"
+                      ],
+                      "certificates": [
+                        "Get",
+                        "List",
+                        "Update",
+                        "Create",
+                        "Import",
+                        "Delete",
+                        "Recover",
+                        "Backup",
+                        "Restore",
+                        "ManageContacts",
+                        "ManageIssuers",
+                        "GetIssuers",
+                        "ListIssuers",
+                        "SetIssuers",
+                        "DeleteIssuers"
+                      ]
+                    }
+                  },
+                  {
+                    //certificate registration
+                    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+                    "objectId": "ed47c2a1-bd23-4341-b39c-f4fd69138dd3",
+                    "permissions": {
+                      "secrets": [
+                        "List",
+                        "Set"
+                      ],
+                      "keys": [],
+                      "certificates": []
+                    }
+                  },
+                  {
+                    //websites
+                    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+                    "objectId": "f8daea97-62e7-4026-becf-13c2ea98e8b4",
+                    "permissions": {
+                      "secrets": [
+                        "List",
+                        "Set"
+                      ],
+                      "keys": [],
+                      "certificates": []
+                    }
+                  }
+                ],
+                "enabledForDeployment": false,
+                "enabledForDiskEncryption": true,
+                "enabledForTemplateDeployment": false,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "enableRbacAuthorization": false,
+                "vaultUri": "https://l200dc1.vault.azure.net/",
+                "provisioningState": "Succeeded"
+              }
+            }
+          ],
+          "outputs": {
+          }
+        },
+        "parameters": {}
+      }
+    }
+    //----------------------------------------------------------------------------------------------
+  ]
+}
