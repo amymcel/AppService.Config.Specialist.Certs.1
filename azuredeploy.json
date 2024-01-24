@@ -32,18 +32,17 @@
     {
       "name": "[variables('appServicePlanName')]",
       "type": "Microsoft.Web/serverfarms",
-      "apiVersion": "2018-02-01",
+      "apiVersion": "2022-09-01",
       "location": "[resourceGroup().location]",
       "sku": {
         "name": "[variables('appServicePlanSku')]",
         "capacity": "[variables('workerSize')]"
-      },
-      "kind": "app"
+      }
     },
     {
       "name": "[variables('webAppName')]",
       "type": "Microsoft.Web/sites",
-      "apiVersion": "2018-11-01",
+      "apiVersion": "2022-09-01",
       "location": "[resourceGroup().location]",
       "kind": "app",
       "dependsOn": [
@@ -56,14 +55,14 @@
     {
       "name": "[variables('certificateName')]",
       "type": "Microsoft.Web/certificates",
-      "apiVersion": "2018-11-01",
+      "apiVersion": "2022-09-01",
       "location": "[resourceGroup().location]",
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites', variables('webAppName'))]"
       ],
       "properties": {
-        "keyVaultId": "[reference(resourceId('L200CertificationKeepers', 'Microsoft.CertificateRegistration/certificateOrders/certificates',variables('certificateName'),variables('certificateName')),'2018-02-01').keyVaultId]",
-        "keyVaultSecretName": "[reference(resourceId('L200CertificationKeepers','Microsoft.CertificateRegistration/certificateOrders/certificates',variables('certificateName'), variables('certificateName')),'2018-02-01').keyVaultSecretName]",
+        "keyVaultId": "[reference(resourceId('L200CertificationKeepers', 'Microsoft.CertificateRegistration/certificateOrders/certificates', variables('certificateName'), variables('certificateName')),'2018-02-01').keyVaultId]",
+        "keyVaultSecretName": "[reference(resourceId('L200CertificationKeepers','Microsoft.CertificateRegistration/certificateOrders/certificates', variables('certificateName'), variables('certificateName')),'2018-02-01').keyVaultSecretName]",
         "serverFarmId": "[resourceId('Microsoft.Web/serverfarms/', variables('appServicePlanName'))]"
       }
     },
@@ -72,7 +71,7 @@
     {
       "name": "nestedTemplate-DNSName",
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2019-10-01",
+      "apiVersion": "2022-09-01",
       "resourceGroup": "L200CertificationKeepers",
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites/', variables('webAppName'))]"
@@ -138,7 +137,7 @@
     {
       "name": "[concat(variables('webAppName'), '/', variables('customHostName'))]",
       "type": "Microsoft.Web/sites/hostNameBindings",
-      "apiVersion": "2018-11-01",
+      "apiVersion": "2022-09-01",
       "location": "[resourceGroup().location]",
       "dependsOn": [
         "[resourceId('L200CertificationKeepers','Microsoft.Resources/deployments', 'nestedTemplate-DNSName')]",
@@ -147,7 +146,7 @@
       ],
       "properties": {
         "sslState": "SniEnabled",
-        "thumbprint": "[reference(resourceId('Microsoft.Web/certificates', variables('certificateName'))).thumbprint]"
+        "thumbprint": "[reference(resourceId('Microsoft.Web/certificates', variables('certificateName'))).Thumbprint]"
       }
     },
     //----------------------------------------------------------------------------------------------
@@ -173,7 +172,7 @@
             {
               "name": "[variables('existingKeyVaultId')]",
               "type": "Microsoft.KeyVault/vaults",
-              "apiVersion": "2016-10-01",
+              "apiVersion": "2022-07-01",
               "location": "Central US",
               "properties": {
                 "sku": {
@@ -265,6 +264,10 @@
             }
           ],
           "outputs": {
+            "certificateThumbprint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Web/certificates', variables('certificateName'))).thumbprint]"
+            }
           }
         },
         "parameters": {}
@@ -273,3 +276,4 @@
     //----------------------------------------------------------------------------------------------
   ]
 }
+
